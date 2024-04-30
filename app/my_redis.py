@@ -12,10 +12,11 @@ class BaseRedisServer:
 
     def handle_command(self,command):
         try:
-            command_method = getattr(self, f"command_{command}")
+            command_method = getattr(self, f"command_{command.lower()}")
             return command_method(command)
         except AttributeError:
             self.no_command_handler(command)
+            return ""
 
     def start(self):
         sock,addr = self.socket.accept()
