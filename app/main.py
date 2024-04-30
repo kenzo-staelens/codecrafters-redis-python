@@ -3,10 +3,10 @@ import asyncio
 import sys
 from app.my_redis import RedisServer
 
-async def main():
+async def main(args):
     #server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
     #server_socket.listen()
-    redis = RedisServer("localhost",6379)
+    redis = RedisServer("localhost",args.port)
     await redis.start()
     
 
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(args)
     try:
-        asyncio.run(main())
+        asyncio.run(main(args))
     except KeyboardInterrupt:
         print("\nexiting")
         sys.exit()
