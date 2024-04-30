@@ -58,7 +58,7 @@ class BaseRedisSlave:
         sends = encoders.Array([encoders.BulkString(x) for x in args])
         sock.sendall(sends.encode("utf-8"))
         resp = sock.recv(1024).decode()
-        print(resp)
+        return
 
     def handshake(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -66,7 +66,9 @@ class BaseRedisSlave:
         self.send_handshake_data(sock, "PING")
         self.send_handshake_data(sock, "REPLCONF","listening-port",str(self.port))
         self.send_handshake_data(sock, "REPLCONF","capa","psync2")
+        response = self.send_handshake_data(sock, "PSYNC","?","-1")
         sock.close()
+        
 
 class RedisServer(BaseRedisServer, BaseRedisSlave):
     def __init__(self, host, port, replicaof=None):
