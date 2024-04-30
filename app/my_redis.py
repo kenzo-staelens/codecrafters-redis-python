@@ -19,8 +19,8 @@ class BaseRedisServer:
             return ""
 
     def start(self):
+        sock,addr = self.socket.accept()
         while True:
-            sock,addr = self.socket.accept()
             command = sock.recv(1024).decode()
             commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(command))
             print(command,commands)
