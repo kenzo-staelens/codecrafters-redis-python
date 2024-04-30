@@ -50,7 +50,7 @@ class Integer(SimpleRESP):
         super().__init__(":",value)
 
 class Null(SimpleRESP):
-    def __init__(self, _):
+    def __init__(self, _=""):
         super().__init__("_","")
 
 class Boolean(SimpleRESP):
