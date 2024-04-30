@@ -10,7 +10,7 @@ def generate_id(length):
     return ''.join(random.choices(string.ascii_lowercase+string.digits, k = length))
 
 class BaseRedisServer:
-    def __init__(self, host,port, replicaof=None):
+    def __init__(self, host,port):
         self.host = host
         self.port = port
         self.state: dict[str,tuple[str,float]] = {}
@@ -18,18 +18,6 @@ class BaseRedisServer:
         self.replicaof = None
         self.replicationId = generate_id(40)
         self.offset = 0
-        if replicaof:
-            self.role="slave"
-            self.replicaof = replicaof
-            self.handshake()
-        
-    def handshake(self):
-        sends = encoders.Array([encoders.BulkString("ping")])
-        print(repr(sends))
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect(self.replicaof)
-        sock.sendall(sends.encode("utf-8"))
-        sock.close()
     
     def no_command_handler(self,command):
         print(f"command not found {command}")
@@ -58,8 +46,33 @@ class BaseRedisServer:
     async def start(self):
         server = await asyncio.start_server(self.handle_client, host=self.host,port=self.port)
         await server.serve_forever()
+
+class BaseRedisSlave:
+    def __init__(self,replicaof=None):
+        if replicaof:
+            self.role="slave"
+            self.replicaof = replicaof
+            self.handshake()
     
-class RedisServer(BaseRedisServer):
+    def send_handshake_data(self, sock, *args):
+        sends = encoders.Array([encoders.BulkString(x) for x in args])
+        sock.sendall(sends.encode("utf-8"))
+        resp = sock.recv(1024).decode()
+        print(resp)
+
+    def handshake(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(self.replicaof)
+        self.send_handshake_data(sock, "PING")
+        self.send_handshake_data(sock, "REPLCONF","listening-port",str(self.port))
+        self.send_handshake_data(sock, "REPLCONF","capa","psync2")
+        sock.close()
+
+class RedisServer(BaseRedisServer, BaseRedisSlave):
+    def __init__(self, host, port, replicaof=None):
+        BaseRedisServer.__init__(self,host,port)
+        BaseRedisSlave.__init__(self,replicaof)
+    
     def command_ping(self,args):
         return encoders.SimpleString("PONG"), args #takes no args
 
