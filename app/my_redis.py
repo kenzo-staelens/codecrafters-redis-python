@@ -4,8 +4,8 @@ import app.encoders as encoders
 import app.decoders as decoders
 
 class BaseRedisServer:
-    def __init__(self, sock: socket.socket):
-        self.socket = sock
+    def __init__(self, host,port):
+        self.server = asyncio.start_server(self.handle_client, host=host,port=port)
     
     def no_command_handler(self,command):
         print(f"command not found {command}")
@@ -19,20 +19,21 @@ class BaseRedisServer:
             self.no_command_handler(command)
             return ""
 
-    def event_handler(self,sock):
+    async def handle_client(self,client_reader,client_writer):
         while True:
-            command = sock.recv(1024).decode()
+            command = client_reader.read(1024).decode()
+            if not command:
+                break
             commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(command))
-            print(command,commands)
             for command in commands:
                 response = self.handle_command(command)
-                sock.send(response.encode("utf-8"))
-
-    def start(self):
-        while True:
-            sock,addr = self.socket.accept()
-            asyncio.create_task(self.event_handler(sock))
-
+                client_writer.write(response.encode("utf-8"))
+                await client_writer.drain()
+        client_writer.close()
+    
+    async def start(self):
+        await self.server.serve_forever()
+    
 class RedisServer(BaseRedisServer):
     def command_ping(self, command):
         return encoders.SimpleString("PONG")
