@@ -49,21 +49,21 @@ class RedisServer(BaseRedisServer):
         write = True
         getresp = None
         time = -1
-        if args[0] in ("NX","XX"):
+        if args[0].upper() in ("NX","XX"):
             if args[0]=="NX" and key in self.state or \
                 args[0]=="XX" and key not in self.state:
                 write = False
             args = args[1:]
-        if args[0] == "GET":
+        if args[0].upper() == "GET":
             pass #return the string or error
             getresp = self.state.get(key)
             args = args[1:]
-        if args[0] == "KEEPTTL":
+        if args[0].upper() == "KEEPTTL":
             args = args[1:] # do nothing
-        elif args[0] in ("EX","PX","EXAT","PXAT"):
-            if args[1].startswith("E"):
-                args[1]*=1000
-                time = args[1] + (unix()*1000 if not args[0].endswith("AT") else 0)
+        elif args[0].upper() in ("EX","PX","EXAT","PXAT"):
+            if not args[1].startswith("E"):
+                args[1]=float(args[1])/1000
+            time = float(args[1]) + (unix() if not args[0].endswith("AT") else 0)
             args = args[2:]
         return write, getresp, time, args
     
@@ -76,7 +76,7 @@ class RedisServer(BaseRedisServer):
     
     def command_get(self, args):
         value,time = self.state.get(args[0],(None,-1))
-        if time!=-1 and time<unix()*1000:
+        if time!=-1 and time<unix():
             value = None
             del self.state[args[0]]
         if value is None:
