@@ -68,3 +68,7 @@ class BigNumber(SimpleRESP):
 class BulkString(AggregateRESP):
     def __init__(self, value):
         super().__init__("$",(len(value),value))
+
+class NullBulkString(SimpleString):
+    def __init__(self, _=""):
+        super().__init__("$","-1")

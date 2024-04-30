@@ -51,5 +51,5 @@ class RedisServer(BaseRedisServer):
     def command_get(self, args):
         value = self.state.get(args[0])
         if value is None:
-            return encoders.Null(), args[1:]
+            return encoders.NullBulkString(), args[1:]
         return encoders.BulkString(value),args[1:]
