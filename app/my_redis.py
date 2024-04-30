@@ -19,6 +19,11 @@ class BaseRedisServer:
         self.replicationId = generate_id(40)
         self.offset = 0
     
+    def generate_rdb(self):
+        empty_rdb = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2"
+        empty_rdb = bytes.fromhex(empty_rdb)
+        return encoders.RDBFile(empty_rdb)
+
     def no_command_handler(self,command):
         print(f"command not found {command}")
 
@@ -38,9 +43,12 @@ class BaseRedisServer:
             data = data.decode()
             commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(data))
             while len(commands)!=0:
-                response,commands = self.handle_command(commands[0],commands[1:]) #pass command and args
-                client_writer.write(response.encode("utf-8"))
-                await client_writer.drain()
+                responses,commands = self.handle_command(commands[0],commands[1:]) #pass command and args
+                if not isinstance(responses, list):
+                    responses = [responses]
+                for response in responses:
+                    client_writer.write(response.encode("utf-8"))
+                    await client_writer.drain()
         client_writer.close()
     
     async def start(self):
@@ -67,6 +75,8 @@ class BaseRedisSlave:
         self.send_handshake_data(sock, "REPLCONF","listening-port",str(self.port))
         self.send_handshake_data(sock, "REPLCONF","capa","psync2")
         response = self.send_handshake_data(sock, "PSYNC","?","-1")
+        rdb = sock.recv(1024)
+        print(rdb)
         sock.close()
 
 class ReplicatableRedisServer(BaseRedisServer):
@@ -77,7 +87,9 @@ class ReplicatableRedisServer(BaseRedisServer):
         return encoders.SimpleString("OK"), args[2:]
 
     def command_psync(self, args):
-        return encoders.SimpleString(f"FULLRESYNC {self.replicationId} {self.offset}"), args[2:]
+        return [encoders.SimpleString(f"FULLRESYNC {self.replicationId} {self.offset}"),
+                self.generate_rdb()
+            ], args[2:]
     
 class RedisServer(ReplicatableRedisServer, BaseRedisSlave):
     def __init__(self, host, port, replicaof=None):

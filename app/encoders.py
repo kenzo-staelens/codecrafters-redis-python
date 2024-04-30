@@ -2,13 +2,15 @@ TERMINATOR = "\r\n"
 
 class RESP:
     def encode(self, format):
+        if isinstance(self.encoded, bytes):
+            return self.encoded
         return self.encoded.encode(format)
 
     def __str__(self) -> str:
-        return self.encoded
+        return str(self.encoded)
 
     def __repr__(self) -> str:
-        return self.encoded
+        return repr(self.encoded)
 
 class SimpleRESP(RESP):
     def __init__(self, token, value):
@@ -27,6 +29,7 @@ class AggregateRESP(RESP):
     def __init__(self, token, values):
         self.token = token
         self.values = values
+        self.length = len(values)
 
     @property
     def encoded(self):
@@ -67,10 +70,8 @@ class BigNumber(SimpleRESP):
 
 class BulkString(AggregateRESP):
     def __init__(self, values):
-        self.length = len(values)
         if isinstance(values,dict):
             values = TERMINATOR.join([f"{k}:{v}" for k,v in values.items()])
-            self.length = len(values)
         super().__init__("$",values)
 
 class NullBulkString(SimpleRESP):
@@ -80,9 +81,16 @@ class NullBulkString(SimpleRESP):
 class Array(AggregateRESP):
     def __init__(self, values):
         super().__init__("*", values)
-        self.length = len(values)
     
     @AggregateRESP.encoded.getter
     def encoded(self):
         converted_values = [str(v) for v in self.values]
         return f"{self.token}{self.length}{TERMINATOR}{"".join(converted_values)}"
+
+class RDBFile(AggregateRESP):
+    def __init__(self, values):
+        super().__init__("$",values)
+    
+    @AggregateRESP.encoded.getter
+    def encoded(self):
+        return f"{self.token}{self.length}{TERMINATOR}".encode()+self.values
