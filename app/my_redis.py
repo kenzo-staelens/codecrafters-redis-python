@@ -22,9 +22,10 @@ class BaseRedisServer:
 
     async def handle_client(self,client_reader,client_writer):
         while True:
-            command = client_reader.read(1024).decode()
+            command = await client_reader.read(1024)
             if not command:
                 break
+            command = command.decode()
             commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(command))
             for command in commands:
                 response = self.handle_command(command)
