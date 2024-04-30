@@ -75,7 +75,7 @@ class RedisServer(BaseRedisServer):
         return encoders.SimpleString("OK"),restargs
     
     def command_get(self, args):
-        value,time = self.state.get(args[0])
+        value,time = self.state.get(args[0],(None,-1))
         if time!=-1 and time<unix()*1000:
             value = None
             del self.state[args[0]]
