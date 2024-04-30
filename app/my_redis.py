@@ -75,6 +75,9 @@ class ReplicatableRedisServer(BaseRedisServer):
     
     def command_replconf(self, args):
         return encoders.SimpleString("OK"), args[2:]
+
+    def command_psync(self, args):
+        return encoders.SimpleString(f"FULLRESYNC {self.replicationId} {self.offset}"), args[2:]
     
 class RedisServer(ReplicatableRedisServer, BaseRedisSlave):
     def __init__(self, host, port, replicaof=None):
