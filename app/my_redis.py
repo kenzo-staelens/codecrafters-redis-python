@@ -27,7 +27,7 @@ class BaseRedisServer:
             data = data.decode()
             commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(data))
             while len(commands)!=0:
-                response,commands = self.handle_command(commands[1:]) #pass args
+                response,commands = self.handle_command(commands[0],commands[1:]) #pass command and args
                 client_writer.write(response.encode("utf-8"))
                 await client_writer.drain()
         client_writer.close()
