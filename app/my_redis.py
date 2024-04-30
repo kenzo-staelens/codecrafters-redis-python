@@ -68,11 +68,17 @@ class BaseRedisSlave:
         self.send_handshake_data(sock, "REPLCONF","capa","psync2")
         response = self.send_handshake_data(sock, "PSYNC","?","-1")
         sock.close()
-        
 
-class RedisServer(BaseRedisServer, BaseRedisSlave):
+class ReplicatableRedisServer(BaseRedisServer):
+    def __init__(self, host, port):
+        super().__init__(host,port)
+    
+    def command_replconf(self, args):
+        return encoders.SimpleString("OK"), args[2:]
+    
+class RedisServer(ReplicatableRedisServer, BaseRedisSlave):
     def __init__(self, host, port, replicaof=None):
-        BaseRedisServer.__init__(self,host,port)
+        ReplicatableRedisServer.__init__(self,host,port)
         BaseRedisSlave.__init__(self,replicaof)
     
     def command_ping(self,args):
