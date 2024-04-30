@@ -23,7 +23,7 @@ class BaseRedisServer:
             sock,addr = self.socket.accept()
             command = sock.recv(1024).decode()
             commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(command))
-            #print(command,commands)
+            print(command,commands)
             for command in commands:
                 response = self.handle_command(command)
                 sock.send(response.encode("utf-8"))
