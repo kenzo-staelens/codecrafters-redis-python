@@ -1,7 +1,12 @@
 import asyncio
+import random
+import string
 from time import time as unix
 import app.encoders as encoders
 import app.decoders as decoders
+
+def generate_id(length):
+    return ''.join(random.choices(string.ascii_lowercase+string.digits, k = length))
 
 class BaseRedisServer:
     def __init__(self, host,port, replicaof=None):
@@ -13,8 +18,8 @@ class BaseRedisServer:
         if replicaof:
             self.role="slave"
             self.replicaof = replicaof
-
-        
+        self.replicationId = generate_id(40)
+        self.offset = 0
     
     def no_command_handler(self,command):
         print(f"command not found {command}")
@@ -89,7 +94,9 @@ class RedisServer(BaseRedisServer):
         return encoders.BulkString(value),args[1:]
 
     def replication_section(self):
-        return encoders.BulkString(f"role:{self.role}")
+        info = {"role":self.role, "master_replid":self.replicationId, "master_repl_offset":self.offset}
+        
+        return encoders.BulkString(info)#f"role:{self.role}")
 
     def command_info(self, args):
         if args[0] == "replication":

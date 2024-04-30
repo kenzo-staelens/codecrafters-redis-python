@@ -67,6 +67,8 @@ class BigNumber(SimpleRESP):
 
 class BulkString(AggregateRESP):
     def __init__(self, value):
+        if isinstance(value,dict):
+            value = TERMINATOR.join([f"{k}:{v}" for k,v in value.items()])
         super().__init__("$",(len(value),value))
 
 class NullBulkString(SimpleRESP):
