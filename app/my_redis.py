@@ -14,7 +14,7 @@ class BaseRedisServer:
     def handle_command(self,command,args):
         try:
             command_method = getattr(self, f"command_{command.lower()}")
-            return command_method(command,args)
+            return command_method(args)
         except AttributeError:
             self.no_command_handler(command)
             return ""
