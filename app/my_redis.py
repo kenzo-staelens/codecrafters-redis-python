@@ -1,3 +1,4 @@
+import asyncio
 import socket
 import app.encoders as encoders
 import app.decoders as decoders
@@ -18,8 +19,7 @@ class BaseRedisServer:
             self.no_command_handler(command)
             return ""
 
-    def start(self):
-        sock,addr = self.socket.accept()
+    def event_handler(self,sock):
         while True:
             command = sock.recv(1024).decode()
             commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(command))
@@ -27,6 +27,11 @@ class BaseRedisServer:
             for command in commands:
                 response = self.handle_command(command)
                 sock.send(response.encode("utf-8"))
+
+    def start(self):
+        while True:
+            sock,addr = self.socket.accept()
+            asyncio.create_task(self.event_handler(sock))
 
 class RedisServer(BaseRedisServer):
     def command_ping(self, command):
