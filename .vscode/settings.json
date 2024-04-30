@@ -1,0 +1,7 @@
+{
+    "python.autoComplete.extraPaths": [
+        "./app/*",
+        "./*"
+    ],
+    "python.analysis.useImportHeuristic": true
+}
