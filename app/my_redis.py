@@ -4,11 +4,17 @@ import app.encoders as encoders
 import app.decoders as decoders
 
 class BaseRedisServer:
-    def __init__(self, host,port):
+    def __init__(self, host,port, replicaof=None):
         self.host = host
         self.port = port
         self.state: dict[str,tuple[str,float]] = {}
         self.role = "master"
+        self.replicaof = None
+        if replicaof:
+            self.role="slave"
+            self.replicaof = replicaof
+
+        
     
     def no_command_handler(self,command):
         print(f"command not found {command}")
@@ -83,7 +89,7 @@ class RedisServer(BaseRedisServer):
         return encoders.BulkString(value),args[1:]
 
     def replication_section(self):
-        return encoders.BulkString("role:master")
+        return encoders.BulkString(f"role:{self.role}")
 
     def command_info(self, args):
         if args[0] == "replication":
