@@ -8,6 +8,7 @@ class BaseRedisServer:
         self.host = host
         self.port = port
         self.state: dict[str,tuple[str,float]] = {}
+        self.role = "master"
     
     def no_command_handler(self,command):
         print(f"command not found {command}")
@@ -19,7 +20,7 @@ class BaseRedisServer:
             return command_method(args)
         except AttributeError:
             self.no_command_handler(command)
-            return ""
+            return encoders.SimpleError(f"command {command} not found"),args
 
     async def handle_client(self,client_reader,client_writer):
         while True:
@@ -46,9 +47,7 @@ class RedisServer(BaseRedisServer):
         return encoders.BulkString(args[0]),args[1:]
 
     def set_command_args(self,key, args):
-        write = True
-        getresp = None
-        time = -1
+        write,getresp, time = True, encoders.SimpleString("OK"), -1
         if len(args)>0 and args[0].upper() in ("NX","XX"):
             if args[0]=="NX" and key in self.state or \
                 args[0]=="XX" and key not in self.state:
@@ -56,7 +55,7 @@ class RedisServer(BaseRedisServer):
             args = args[1:]
         if len(args)>0 and args[0].upper() == "GET":
             pass #return the string or error
-            getresp = self.state.get(key)
+            self.command_get([key])
             args = args[1:]
         if len(args)>0 and args[0].upper() == "KEEPTTL":
             args = args[1:] # do nothing
@@ -69,10 +68,10 @@ class RedisServer(BaseRedisServer):
     
     def command_set(self,args):
         restargs = args[2:]
-        write, getresp, time, restargs = self.set_command_args(args[0],restargs)
+        write, response, time, restargs = self.set_command_args(args[0],restargs)
         if write:
             self.state[args[0]] = args[1],time
-        return encoders.SimpleString("OK"),restargs
+        return response,restargs
     
     def command_get(self, args):
         value,time = self.state.get(args[0],(None,-1))
@@ -82,3 +81,12 @@ class RedisServer(BaseRedisServer):
         if value is None:
             return encoders.NullBulkString(), args[1:]
         return encoders.BulkString(value),args[1:]
+
+    def replication_section(self):
+        return encoders.BulkString("role:master")
+
+    def command_info(self, args):
+        if args[0] == "replication":
+            response = self.replication_section()
+            args = args[1:]
+        return response, args

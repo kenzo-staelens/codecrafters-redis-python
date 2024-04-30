@@ -14,7 +14,6 @@ if __name__ == "__main__":
     parser = ArgumentParser(prog="Redis",description="python redis implementation")
     parser.add_argument("--port",type=int, default=6379)
     args = parser.parse_args()
-    print(args)
     try:
         asyncio.run(main(args))
     except KeyboardInterrupt:
