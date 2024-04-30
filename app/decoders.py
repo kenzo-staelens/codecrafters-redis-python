@@ -15,9 +15,9 @@ class BaseDecoder:
     @classmethod
     def decode(cls,value):
         token = value[0][0]
-        decoder = decoder_table(token)
+        decoder = decoder_table[token]
         value[0] = value[0][1:] #remove indicator
-        return decoder._decode(cls,value)
+        return decoder._decode(value)
 
 class ArrayDecoder(BaseDecoder):
     @classmethod
