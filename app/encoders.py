@@ -31,7 +31,7 @@ class AggregateRESP(RESP):
     @property
     def encoded(self):
         converted_values = [str(v) for v in self.values]
-        return f"{self.token}" + TERMINATOR.join(converted_values)
+        return f"{self.token}{TERMINATOR.join(converted_values)}{TERMINATOR}"
 
     @encoded.setter
     def encoded(self,_):
