@@ -49,18 +49,18 @@ class RedisServer(BaseRedisServer):
         write = True
         getresp = None
         time = -1
-        if args[0].upper() in ("NX","XX"):
+        if len(args)>0 and args[0].upper() in ("NX","XX"):
             if args[0]=="NX" and key in self.state or \
                 args[0]=="XX" and key not in self.state:
                 write = False
             args = args[1:]
-        if args[0].upper() == "GET":
+        if len(args)>0 and args[0].upper() == "GET":
             pass #return the string or error
             getresp = self.state.get(key)
             args = args[1:]
-        if args[0].upper() == "KEEPTTL":
+        if len(args)>0 and args[0].upper() == "KEEPTTL":
             args = args[1:] # do nothing
-        elif args[0].upper() in ("EX","PX","EXAT","PXAT"):
+        elif len(args)>0 and args[0].upper() in ("EX","PX","EXAT","PXAT"):
             if not args[1].startswith("E"):
                 args[1]=float(args[1])/1000
             time = float(args[1]) + (unix() if not args[0].endswith("AT") else 0)
