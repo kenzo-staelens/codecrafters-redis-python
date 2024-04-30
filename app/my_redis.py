@@ -16,9 +16,9 @@ class BaseRedisServer:
             self.no_command_handler(self,command)
 
     def start(self):
-        pass
-        #command = self.socket.recv(1024)
-        #self.handle_command(command)
+        command = self.socket.recv(1024).decode()
+        response = self.handle_command(command)
+        self.socket.send(response.encode("utf-8"))
 
 class RedisServer(BaseRedisServer):
     def command_ping(self, command):
