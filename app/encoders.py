@@ -5,14 +5,14 @@ class RESP:
         return self.encoded.encode(format)
 
     def __str__(self) -> str:
-        return self.encoded()
+        return self.encoded
 
     def __repr__(self) -> str:
-        return self.encoded()
+        return self.encoded
 
 class SimpleRESP(RESP):
-    def __init__(self, token,value):
-        self.token=token
+    def __init__(self, token, value):
+        self.token = token
         self.value = value
     
     @property
@@ -69,6 +69,6 @@ class BulkString(AggregateRESP):
     def __init__(self, value):
         super().__init__("$",(len(value),value))
 
-class NullBulkString(SimpleString):
+class NullBulkString(SimpleRESP):
     def __init__(self, _=""):
         super().__init__("$","-1")

@@ -1,4 +1,5 @@
 import asyncio
+from time import time as unix
 import app.encoders as encoders
 import app.decoders as decoders
 
@@ -6,7 +7,7 @@ class BaseRedisServer:
     def __init__(self, host,port):
         self.host = host
         self.port = port
-        self.state = {}
+        self.state: dict[str,tuple[str,float]] = {}
     
     def no_command_handler(self,command):
         print(f"command not found {command}")
@@ -44,12 +45,40 @@ class RedisServer(BaseRedisServer):
     def command_echo(self,args):
         return encoders.BulkString(args[0]),args[1:]
 
+    def set_command_args(self,key, args):
+        write = True
+        getresp = None
+        time = -1
+        if args[0] in ("NX","XX"):
+            if args[0]=="NX" and key in self.state or \
+                args[0]=="XX" and key not in self.state:
+                write = False
+            args = args[1:]
+        if args[0] == "GET":
+            pass #return the string or error
+            getresp = self.state.get(key)
+            args = args[1:]
+        if args[0] == "KEEPTTL":
+            args = args[1:] # do nothing
+        elif args[0] in ("EX","PX","EXAT","PXAT"):
+            if args[1].startswith("E"):
+                args[1]*=1000
+                time = args[1] + (unix()*1000 if not args[0].endswith("AT") else 0)
+            args = args[2:]
+        return write, getresp, time, args
+    
     def command_set(self,args):
-        self.state[args[0]] = args[1]
-        return encoders.SimpleString("OK"),args[2:]
+        restargs = args[2:]
+        write, getresp, time, restargs = self.set_command_args(restargs)
+        if write:
+            self.state[args[0]] = args[1],time
+        return encoders.SimpleString("OK"),restargs
     
     def command_get(self, args):
-        value = self.state.get(args[0])
+        value,time = self.state.get(args[0])
+        if time!=-1 and time<unix()*1000:
+            value = None
+            del self.state[args[0]]
         if value is None:
             return encoders.NullBulkString(), args[1:]
         return encoders.BulkString(value),args[1:]
