@@ -69,7 +69,7 @@ class RedisServer(BaseRedisServer):
     
     def command_set(self,args):
         restargs = args[2:]
-        write, getresp, time, restargs = self.set_command_args(restargs)
+        write, getresp, time, restargs = self.set_command_args(args[0],restargs)
         if write:
             self.state[args[0]] = args[1],time
         return encoders.SimpleString("OK"),restargs
