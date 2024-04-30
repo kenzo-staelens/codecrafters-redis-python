@@ -19,12 +19,14 @@ class BaseRedisServer:
             return ""
 
     def start(self):
-        sock,addr = self.socket.accept()
-        command = sock.recv(1024).decode()
-        commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(command))
-        for command in commands:
-            response = self.handle_command(command)
-            sock.send(response.encode("utf-8"))
+        while True:
+            sock,addr = self.socket.accept()
+            command = sock.recv(1024).decode()
+            commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(command))
+            #print(command,commands)
+            for command in commands:
+                response = self.handle_command(command)
+                sock.send(response.encode("utf-8"))
 
 class RedisServer(BaseRedisServer):
     def command_ping(self, command):
