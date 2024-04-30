@@ -27,11 +27,15 @@ class AggregateRESP(RESP):
     def __init__(self, token, values):
         self.token = token
         self.values = values
+        self.skip_terminator=False
 
     @property
     def encoded(self):
         converted_values = [str(v) for v in self.values]
-        return f"{self.token}{TERMINATOR.join(converted_values)}{TERMINATOR}"
+        represented = f"{self.token}{self.length}{TERMINATOR}{TERMINATOR.join(converted_values)}"
+        if not self.skip_terminator:
+            represented+=TERMINATOR
+        return represented
 
     @encoded.setter
     def encoded(self,_):
@@ -66,11 +70,19 @@ class BigNumber(SimpleRESP):
         super().__init__("(",value)
 
 class BulkString(AggregateRESP):
-    def __init__(self, value):
-        if isinstance(value,dict):
-            value = TERMINATOR.join([f"{k}:{v}" for k,v in value.items()])
-        super().__init__("$",(len(value),value))
+    def __init__(self, values):
+        self.length = len(values)
+        if isinstance(values,dict):
+            values = TERMINATOR.join([f"{k}:{v}" for k,v in values.items()])
+            self.length = len(values)
+        super().__init__("$",[values])
 
 class NullBulkString(SimpleRESP):
     def __init__(self, _=""):
         super().__init__("$","-1")
+
+class Array(AggregateRESP):
+    def __init__(self, values):
+        super().__init__("*", values)
+        self.length = len(values)
+        self.skip_terminator=True

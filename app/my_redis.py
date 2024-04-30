@@ -1,5 +1,6 @@
 import asyncio
 import random
+import socket
 import string
 from time import time as unix
 import app.encoders as encoders
@@ -15,15 +16,23 @@ class BaseRedisServer:
         self.state: dict[str,tuple[str,float]] = {}
         self.role = "master"
         self.replicaof = None
+        self.replicationId = generate_id(40)
+        self.offset = 0
         if replicaof:
             self.role="slave"
             self.replicaof = replicaof
-        self.replicationId = generate_id(40)
-        self.offset = 0
+            self.handshake()
+        
+    def handshake(self):
+        sends = encoders.Array([encoders.BulkString("ping")])
+        print(repr(sends))
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(self.replicaof)
+        sock.sendall(sends.encode("utf-8"))
+        sock.close()
     
     def no_command_handler(self,command):
         print(f"command not found {command}")
-        pass #pass for now
 
     def handle_command(self,command,args):
         try:
@@ -96,7 +105,7 @@ class RedisServer(BaseRedisServer):
     def replication_section(self):
         info = {"role":self.role, "master_replid":self.replicationId, "master_repl_offset":self.offset}
         
-        return encoders.BulkString(info)#f"role:{self.role}")
+        return encoders.BulkString(info)
 
     def command_info(self, args):
         if args[0] == "replication":

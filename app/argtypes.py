@@ -16,4 +16,4 @@ class StringInteger(Action):
             message = f'second argument to "{self.dest}" requires an integer'
         if message:
             raise ArgumentError(self, message)
-        setattr(namespace, self.dest, values)
+        setattr(namespace, self.dest, tuple(values))
