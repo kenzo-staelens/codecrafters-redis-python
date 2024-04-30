@@ -4,8 +4,8 @@ import app.encoders as encoders
 import app.decoders as decoders
 
 class BaseRedisServer:
-    def __init__(self, host,port):
-        self.server = asyncio.start_server(self.handle_client, host=host,port=port)
+    async def __init__(self, host,port):
+        self.server = await asyncio.start_server(self.handle_client, host=host,port=port)
     
     def no_command_handler(self,command):
         print(f"command not found {command}")
