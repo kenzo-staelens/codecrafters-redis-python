@@ -5,7 +5,7 @@ async def main():
     #server_socket = socket.create_server(("localhost", 6379), reuse_port=True)
     #server_socket.listen()
     
-    redis = RedisServer("localhost",6379)
+    redis = await RedisServer("localhost",6379)
     await redis.start()
 
 
