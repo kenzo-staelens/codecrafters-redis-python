@@ -1,6 +1,16 @@
 TERMINATOR = "\r\n"
 
-class SimpleRESP:
+class RESP:
+    def encode(self, format):
+        return self.encoded.encode(format)
+
+    def __str__(self) -> str:
+        return self.encoded()
+
+    def __repr__(self) -> str:
+        return self.encoded()
+
+class SimpleRESP(RESP):
     def __init__(self, token,value):
         self.token=token
         self.value = value
@@ -13,11 +23,19 @@ class SimpleRESP:
     def encoded(self,_):
         pass
 
-    def encode(self, format):
-        return self.encoded.encode(format)
+class AggregateRESP(RESP):
+    def __init__(self, token, values):
+        self.token = token
+        self.values = values
 
-    def __repr__(self) -> str:
-        return self.encoded()
+    @property
+    def encoded(self):
+        converted_values = [str(v) for v in self.values]
+        return f"{self.token}" + TERMINATOR.join(converted_values)
+
+    @encoded.setter
+    def encoded(self,_):
+        pass
 
 class SimpleString(SimpleRESP):
     def __init__(self, value):
@@ -46,3 +64,7 @@ class Double(SimpleRESP):
 class BigNumber(SimpleRESP):
     def __init__(self, value):
         super().__init__("(",value)
+
+class BulkString(AggregateRESP):
+    def __init__(self, value):
+        super().__init__("$",(len(value),value))
