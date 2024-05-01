@@ -3,5 +3,9 @@
         "./app/*",
         "./*"
     ],
-    "python.analysis.useImportHeuristic": true
+    "python.analysis.useImportHeuristic": true,
+    "python.analysis.extraPaths": [
+        "./app/*",
+        "./*"
+    ]
 }
