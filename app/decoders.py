@@ -5,7 +5,10 @@ TERMINATOR = "\r\n"
 class BaseDecoder:
     @classmethod
     def preprocess(cls,value):
-        return value.split(TERMINATOR)
+        split = value.split(TERMINATOR)
+        if split[-1]=="":
+            return split[:-1]
+        return split
 
     @classmethod
     @abstractmethod

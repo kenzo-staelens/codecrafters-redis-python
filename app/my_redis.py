@@ -9,27 +9,20 @@ import app.decoders as decoders
 def generate_id(length):
     return ''.join(random.choices(string.ascii_lowercase+string.digits, k = length))
 
-class BaseRedisMaster:
-    def __init__(self, host,port):
+class BaseRedis:
+    def __init__(self, host, port):
         self.host = host
         self.port = port
         self.state: dict[str,tuple[str,float]] = {}
-        self.role = "master"
-        self.replicaof = None
-        self.replicationId = generate_id(40)
-        self.offset = 0
-    
+
     def generate_rdb(self):
         empty_rdb = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2"
         empty_rdb = bytes.fromhex(empty_rdb)
         return encoders.RDBFile(empty_rdb)
-
+    
     def no_command_handler(self,command):
         print(f"command not found {command}")
         return encoders.SimpleError(f"command {command} not found")
-
-    def propagate(self,data):
-        pass #notimplementederror will cause issues
 
     def handle_command(self,command,args,asyncsock):
         try:
@@ -37,43 +30,52 @@ class BaseRedisMaster:
             return command_method(args)
         except AttributeError:
             return self.no_command_handler(command)
-
-    async def handle_commands(self, raw, commands, client_reader, client_writer):
+    
+    async def handle_commands(self, raw, commands, client_reader, client_writer,debug=False):
         while len(commands)!=0:
+            if debug:
+                print(commands)
             responses,commands = self.handle_command(commands[0],commands[1:],(client_reader,client_writer)) #pass command and args
             if not isinstance(responses, list):
                 responses = [responses]
             for response in responses:
                 client_writer.write(response.encode("utf-8"))
                 await client_writer.drain()
-
-    async def handle_client(self,client_reader,client_writer):
-        print("here2")
+    
+    async def handle_client(self,client_reader,client_writer,debug=False):
         while not client_reader.at_eof():
             data = await client_reader.read(1024)
-            if self.role=="slave":
-                print(data)
             if not data:
                 break
             decoded_data = data.decode()
-            commands,_ = decoders.BaseDecoder.decode(decoders.BaseDecoder.preprocess(decoded_data))
-            await self.handle_commands(data, commands, client_reader,client_writer)
+            rest = decoders.BaseDecoder.preprocess(decoded_data)
+            commands = []
+            while len(rest)!=0:
+                cmd,rest = decoders.BaseDecoder.decode(rest)
+                commands+=cmd
+            await self.handle_commands(data, commands, client_reader,client_writer,debug)
         client_writer.close()
+
+class BaseRedisMaster(BaseRedis):
+    def __init__(self, host,port):
+        super().__init__(host,port)
+        self.role = "master"
+        self.replicaof = None
+        self.replicationId = generate_id(40)
+        self.offset = 0
     
     async def start_master(self):
         server = await asyncio.start_server(self.handle_client, host=self.host,port=self.port)
         async with server:
             await server.serve_forever()
 
-class BaseRedisSlave:
+class BaseRedisSlave(BaseRedis):
     def __init__(self,host, port, replicaof=None):
-        self.host = host
-        self.port = port
+        super().__init__(host,port)
         if replicaof:
             self.role="slave"
             self.replicaof = replicaof
             
-    
     async def send_handshake_data(self, sock, *args):
         reader, writer = sock
         sends = encoders.Array([encoders.BulkString(x) for x in args])
@@ -96,7 +98,7 @@ class BaseRedisSlave:
     async def start_slave(self):
         sock = await asyncio.open_connection(*self.replicaof)
         await self.handshake(sock)
-        return asyncio.create_task(self.handle_client(*sock))
+        return asyncio.create_task(self.handle_client(*sock,True))
 
 class ReplicatableRedisMaster(BaseRedisMaster):
     def __init__(self, host, port):
@@ -111,8 +113,9 @@ class ReplicatableRedisMaster(BaseRedisMaster):
                 self.generate_rdb()
             ], args[2:]
 
-    async def handle_commands(self, raw, commands, client_reader, client_writer):
+    async def handle_commands(self, raw, commands, client_reader, client_writer,debug=False):
         while len(commands)!=0:
+            #override add propagate
             if commands[0].upper() in ("SET","DEL"):
                 await self.propagate(raw)
             responses,commands = self.handle_command(commands[0],commands[1:],(client_reader,client_writer)) #pass command and args
@@ -125,6 +128,7 @@ class ReplicatableRedisMaster(BaseRedisMaster):
     def handle_command(self,command,args,asyncsock):
         try:
             command_method = getattr(self, f"command_{command.lower()}")
+            #override add propagate sockets
             if command.lower() == "replconf" and args[0]=="listening-port":
                 self.propagates.append(asyncsock)
             return command_method(args)
@@ -139,7 +143,6 @@ class ReplicatableRedisMaster(BaseRedisMaster):
             except IOError as e:
                 print(e)
         self.propagates = [(reader,writer) for reader,writer in self.propagates if not writer.is_closing()]
-        print(len(self.propagates))
 
 class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
     def __init__(self, host, port, replicaof=None):
@@ -200,7 +203,7 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
         return response, args
 
     async def start(self):
-        coros = [self.start_master()]
+        coros =[self.start_master()]
         if self.role=="slave":
             coros.append(self.start_slave())
         await asyncio.gather(*coros)
