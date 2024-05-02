@@ -31,31 +31,33 @@ class BaseRedis:
         except AttributeError:
             return self.no_command_handler(command)
     
-    async def handle_commands(self, raw, commands, client_reader, client_writer,debug=False):
+    async def handle_commands(self, raw, commands, client_reader, client_writer,replica=False):
         while len(commands)!=0:
-            if debug:
-                print(commands)
+            replica_replconf = replica and commands[0].upper()=="REPLCONF"
             responses,commands = self.handle_command(commands[0],commands[1:],(client_reader,client_writer)) #pass command and args
             if not isinstance(responses, list):
                 responses = [responses]
-            for response in responses:
-                client_writer.write(response.encode("utf-8"))
-                await client_writer.drain()
+            if not replica or replica_replconf:
+                for response in responses:
+                    client_writer.write(response.encode("utf-8"))
+                    await client_writer.drain()
     
-    async def handle_client(self,client_reader,client_writer,debug=False):
+    async def handle_client(self,client_reader,client_writer,replica=False):
         while not client_reader.at_eof():
             data = await client_reader.read(1024)
+            print(data)
             if not data:
                 break
             decoded_data = data.decode()
             rest = decoders.BaseDecoder.preprocess(decoded_data)
+            print(rest)
             commands = []
             while len(rest)!=0:
                 cmd,rest = decoders.BaseDecoder.decode(rest)
                 commands+=cmd
-            if debug:
-                print("*"*5,commands)
-            await self.handle_commands(data, commands, client_reader,client_writer,debug)
+            print(commands)
+            await self.handle_commands(data, commands, client_reader,client_writer,replica)
+            #print("***",self.state,self.role)
         client_writer.close()
 
 class BaseRedisMaster(BaseRedis):
@@ -106,32 +108,32 @@ class ReplicatableRedisMaster(BaseRedisMaster):
     def __init__(self, host, port):
         super().__init__(host,port)
         self.propagates: list[tuple[asyncio.StreamReader, asyncio.StreamWriter]] = []
-    
-    def command_replconf(self, args):
-        return encoders.SimpleString("OK"), args[2:]
 
     def command_psync(self, args):
         return [encoders.SimpleString(f"FULLRESYNC {self.replicationId} {self.offset}"),
                 self.generate_rdb()
             ], args[2:]
 
-    async def handle_commands(self, raw, commands, client_reader, client_writer,debug=False):
+    async def handle_commands(self, raw, commands, client_reader, client_writer,replica=False):
         while len(commands)!=0:
             #override add propagate
             if commands[0].upper() in ("SET","DEL"):
                 await self.propagate(raw)
+            replica_replconf = replica and commands[0].upper()=="REPLCONF"
             responses,commands = self.handle_command(commands[0],commands[1:],(client_reader,client_writer)) #pass command and args
             if not isinstance(responses, list):
                 responses = [responses]
-            for response in responses:
-                client_writer.write(response.encode("utf-8"))
-                await client_writer.drain()
+            if not replica or replica_replconf:
+                for response in responses:
+                    client_writer.write(response.encode("utf-8"))
+                    await client_writer.drain()
 
     def handle_command(self,command,args,asyncsock):
         try:
             command_method = getattr(self, f"command_{command.lower()}")
+            print(command_method)
             #override add propagate sockets
-            if command.lower() == "replconf" and args[0]=="listening-port":
+            if command.upper() == "REPLCONF" and args[0]=="listening-port":
                 self.propagates.append(asyncsock)
             return command_method(args)
         except AttributeError:
@@ -156,6 +158,12 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
 
     def command_echo(self,args):
         return encoders.BulkString(args[0]),args[1:]
+
+    def command_replconf(self, args):
+        if self.role=="master":
+            return encoders.SimpleString("OK"), args[2:]
+        else:
+            return encoders.Array([encoders.BulkString(x) for x in ["REPLCONF","ACK","0"]]), args[2:]
 
     def set_command_args(self,key, args):
         write,getresp, time = True, encoders.SimpleString("OK"), -1
