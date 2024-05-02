@@ -43,7 +43,7 @@ class BaseRedis:
                     await client_writer.drain()
     
     async def handle_client(self,client_reader,client_writer,replica=False):
-        while not client_reader.at_eof():
+        while True:
             data = await client_reader.read(1024)
             print(data)
             if not data:
@@ -57,7 +57,7 @@ class BaseRedis:
                 commands+=cmd
             print(commands)
             await self.handle_commands(data, commands, client_reader,client_writer,replica)
-            print("***",self.state,self.role)
+            #print("***",self.state,self.role)
         client_writer.close()
 
 class BaseRedisMaster(BaseRedis):
@@ -80,24 +80,38 @@ class BaseRedisSlave(BaseRedis):
             self.role="slave"
             self.replicaof = replicaof
             
-    async def send_handshake_data(self, sock, *args):
+    async def send_handshake_data(self, sock, reads, *args):
         reader, writer = sock
         sends = encoders.Array([encoders.BulkString(x) for x in args])
         writer.write(sends.encode("utf-8"))
         await writer.drain()
-        resp = await reader.read(1024)#.decode()
-        return resp
-
-    def copy_rdb(self, rdb):
-        pass
+        return await reader.read(reads)#.decode()
+        
+    async def copy_rdb(self, reader):
+        #fucking race conditions
+        r= await reader.read(1) # $
+        last = b''
+        count = 0
+        while True:
+            read = await reader.read(1)
+            try:
+                num = int(read)
+                count*=10
+                count+=num
+            except ValueError:
+                last=read
+                break
+        rdb = last + await reader.read(count+1)# +1 for \n from \r\n; of which \r already read above
 
     async def handshake(self, sock):
-        await self.send_handshake_data(sock, "PING")
-        await self.send_handshake_data(sock, "REPLCONF","listening-port",str(self.port))
-        await self.send_handshake_data(sock, "REPLCONF","capa","psync2")
-        await self.send_handshake_data(sock, "PSYNC","?","-1")
-        #rdb = sock.recv(1024)
-        #self.copy_rdb(rdb)
+        reader, _ = sock
+        print(await self.send_handshake_data(sock,7, "PING"))
+        print(await self.send_handshake_data(sock,5, "REPLCONF","listening-port",str(self.port)))
+        print(await self.send_handshake_data(sock,5, "REPLCONF","capa","psync2"))
+        print(await self.send_handshake_data(sock,56, "PSYNC","?","-1"))
+        #rdb = await sock[0].read(1024)
+        #print(rdb)
+        await self.copy_rdb(reader)
 
     async def start_slave(self):
         sock = await asyncio.open_connection(*self.replicaof)
