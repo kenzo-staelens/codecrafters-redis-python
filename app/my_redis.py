@@ -53,6 +53,8 @@ class BaseRedis:
             while len(rest)!=0:
                 cmd,rest = decoders.BaseDecoder.decode(rest)
                 commands+=cmd
+            if debug:
+                print("*"*5,commands)
             await self.handle_commands(data, commands, client_reader,client_writer,debug)
         client_writer.close()
 
