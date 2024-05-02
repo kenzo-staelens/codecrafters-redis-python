@@ -101,12 +101,10 @@ class BaseRedisSlave(BaseRedis):
 
     async def handshake(self, sock):
         reader, _ = sock
-        print(await self.send_handshake_data(sock,7, "PING"))
-        print(await self.send_handshake_data(sock,5, "REPLCONF","listening-port",str(self.port)))
-        print(await self.send_handshake_data(sock,5, "REPLCONF","capa","psync2"))
-        print(await self.send_handshake_data(sock,56, "PSYNC","?","-1"))
-        #rdb = await sock[0].read(1024)
-        #print(rdb)
+        await self.send_handshake_data(sock,7, "PING")
+        await self.send_handshake_data(sock,5, "REPLCONF","listening-port",str(self.port))
+        await self.send_handshake_data(sock,5, "REPLCONF","capa","psync2")
+        await self.send_handshake_data(sock,56, "PSYNC","?","-1")
         await self.copy_rdb(reader)
 
     async def start_slave(self):
@@ -143,7 +141,7 @@ class ReplicatableRedisMaster(BaseRedisMaster):
             command_method = getattr(self, f"command_{command.lower()}")
             print(command_method)
             #override add propagate sockets
-            if command.upper() == "REPLCONF" and args[0]=="listening-port":
+            if command.lower() == "replconf" and args[0]=="listening-port":
                 self.propagates.append(asyncsock)
             return command_method(args)
         except AttributeError:
