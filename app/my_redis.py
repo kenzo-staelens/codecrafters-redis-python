@@ -1,6 +1,5 @@
 import asyncio
 import random
-import socket
 import string
 from time import time as unix
 import app.encoders as encoders
@@ -14,6 +13,7 @@ class BaseRedis:
         self.host = host
         self.port = port
         self.state: dict[str,tuple[str,float]] = {}
+        self.offset = 0
 
     def generate_rdb(self):
         empty_rdb = "524544495330303131fa0972656469732d76657205372e322e30fa0a72656469732d62697473c040fa056374696d65c26d08bc65fa08757365642d6d656dc2b0c41000fa08616f662d62617365c000fff06e3bfec0ff5aa2"
@@ -45,19 +45,16 @@ class BaseRedis:
     async def handle_client(self,client_reader,client_writer,replica=False):
         while True:
             data = await client_reader.read(1024)
-            print(data)
             if not data:
                 break
             decoded_data = data.decode()
             rest = decoders.BaseDecoder.preprocess(decoded_data)
-            print(rest)
             commands = []
             while len(rest)!=0:
                 cmd,rest = decoders.BaseDecoder.decode(rest)
                 commands+=cmd
-            print(commands)
             await self.handle_commands(data, commands, client_reader,client_writer,replica)
-            #print("***",self.state,self.role)
+            self.offset+=len(data)
         client_writer.close()
 
 class BaseRedisMaster(BaseRedis):
@@ -66,7 +63,6 @@ class BaseRedisMaster(BaseRedis):
         self.role = "master"
         self.replicaof = None
         self.replicationId = generate_id(40)
-        self.offset = 0
     
     async def start_master(self):
         server = await asyncio.start_server(self.handle_client, host=self.host,port=self.port)
@@ -177,7 +173,7 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
         if self.role=="master":
             return encoders.SimpleString("OK"), args[2:]
         else:
-            return encoders.Array([encoders.BulkString(x) for x in ["REPLCONF","ACK","0"]]), args[2:]
+            return encoders.Array([encoders.BulkString(x) for x in ["REPLCONF","ACK",str(self.data)]]), args[2:]
 
     def set_command_args(self,key, args):
         write,getresp, time = True, encoders.SimpleString("OK"), -1
