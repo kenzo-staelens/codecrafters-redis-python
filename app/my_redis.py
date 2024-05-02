@@ -26,7 +26,7 @@ class BaseRedisMaster:
 
     def no_command_handler(self,command):
         print(f"command not found {command}")
-        return encoders.SimpleError(f"command {command} not found"),args
+        return encoders.SimpleError(f"command {command} not found")
 
     def propagate(self,data):
         pass #notimplementederror will cause issues
@@ -48,6 +48,7 @@ class BaseRedisMaster:
                 await client_writer.drain()
 
     async def handle_client(self,client_reader,client_writer):
+        print("here2")
         while not client_reader.at_eof():
             data = await client_reader.read(1024)
             if self.role=="slave":
@@ -61,7 +62,8 @@ class BaseRedisMaster:
     
     async def start_master(self):
         server = await asyncio.start_server(self.handle_client, host=self.host,port=self.port)
-        await server.serve_forever()
+        async with server:
+            await server.serve_forever()
 
 class BaseRedisSlave:
     def __init__(self,host, port, replicaof=None):
@@ -70,32 +72,31 @@ class BaseRedisSlave:
         if replicaof:
             self.role="slave"
             self.replicaof = replicaof
-            self.replica_socket = self.handshake()
+            
     
-    def send_handshake_data(self, sock, *args):
+    async def send_handshake_data(self, sock, *args):
+        reader, writer = sock
         sends = encoders.Array([encoders.BulkString(x) for x in args])
-        sock.sendall(sends.encode("utf-8"))
-        resp = sock.recv(1024).decode()
-        return
+        writer.write(sends.encode("utf-8"))
+        await writer.drain()
+        resp = await reader.read(1024)#.decode()
+        return resp
 
     def copy_rdb(self, rdb):
         pass
 
-    def handshake(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind((self.host,self.port))
-        sock.connect(self.replicaof)
-        self.send_handshake_data(sock, "PING")
-        self.send_handshake_data(sock, "REPLCONF","listening-port",str(self.port))
-        self.send_handshake_data(sock, "REPLCONF","capa","psync2")
-        self.send_handshake_data(sock, "PSYNC","?","-1")
-        rdb = sock.recv(1024)
-        self.copy_rdb(rdb)
-        return sock
+    async def handshake(self, sock):
+        await self.send_handshake_data(sock, "PING")
+        await self.send_handshake_data(sock, "REPLCONF","listening-port",str(self.port))
+        await self.send_handshake_data(sock, "REPLCONF","capa","psync2")
+        await self.send_handshake_data(sock, "PSYNC","?","-1")
+        #rdb = sock.recv(1024)
+        #self.copy_rdb(rdb)
 
     async def start_slave(self):
-        server = await asyncio.start_server(self.handle_client, sock = self.replica_socket,backlog=1)
-        await server.serve_forever()
+        sock = await asyncio.open_connection(*self.replicaof)
+        await self.handshake(sock)
+        return asyncio.create_task(self.handle_client(*sock))
 
 class ReplicatableRedisMaster(BaseRedisMaster):
     def __init__(self, host, port):
@@ -199,7 +200,7 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
         return response, args
 
     async def start(self):
-        if self.role=="master":
-            await self.start_master()
-        else:
-            await self.start_slave()
+        coros = [self.start_master()]
+        if self.role=="slave":
+            coros.append(self.start_slave())
+        await asyncio.gather(*coros)
