@@ -57,7 +57,7 @@ class BaseRedis:
                 commands+=cmd
             print(commands)
             await self.handle_commands(data, commands, client_reader,client_writer,replica)
-            #print("***",self.state,self.role)
+            print("***",self.state,self.role)
         client_writer.close()
 
 class BaseRedisMaster(BaseRedis):
