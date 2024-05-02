@@ -54,7 +54,9 @@ class BaseRedis:
                 cmd,rest = decoders.BaseDecoder.decode(rest)
                 commands+=cmd
             await self.handle_commands(data, commands, client_reader,client_writer,replica)
-            self.offset+=len(data)
+            if replica:
+                print(self.offset, data,len(data))
+                self.offset+=len(data)
         client_writer.close()
 
 class BaseRedisMaster(BaseRedis):
@@ -144,7 +146,8 @@ class ReplicatableRedisMaster(BaseRedisMaster):
             if command.lower() == "replconf" and args[0]=="listening-port":
                 self.propagates.append(asyncsock)
             return command_method(args)
-        except AttributeError:
+        except AttributeError as e:
+            print(e)
             return self.no_command_handler(command)
     
     async def propagate(self, data):
@@ -171,7 +174,7 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
         if self.role=="master":
             return encoders.SimpleString("OK"), args[2:]
         else:
-            return encoders.Array([encoders.BulkString(x) for x in ["REPLCONF","ACK",str(self.data)]]), args[2:]
+            return encoders.Array([encoders.BulkString(x) for x in ["REPLCONF","ACK",str(self.offset)]]), args[2:]
 
     def set_command_args(self,key, args):
         write,getresp, time = True, encoders.SimpleString("OK"), -1
