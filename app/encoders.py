@@ -94,3 +94,8 @@ class RDBFile(AggregateRESP):
     @AggregateRESP.encoded.getter
     def encoded(self):
         return f"{self.token}{self.length}{TERMINATOR}".encode()+self.values
+
+class Command(AggregateRESP):
+    def __init__(self, values):
+        values = [BulkString(x) for x in values]
+        super().__init__("*",values)
