@@ -1,4 +1,6 @@
 import asyncio
+from time import time
+from queue import Queue
 import random
 import string
 from time import time as unix
@@ -29,7 +31,7 @@ class BaseRedis:
     async def handle_command(self,command,args,asyncsock):
         try:
             command_method = getattr(self, f"command_{command.lower()}")
-            return await command_method(args)
+            return await command_method(args,asyncsock)
         except AttributeError:
             return self.no_command_handler(command)
     
@@ -64,7 +66,6 @@ class BaseRedis:
                 except Exception as e:
                     print(traceback.format_exc())
             data = await client_reader.read(1024)
-            print(data)
             if not data:
                 break
             decoder.write(data)
@@ -123,19 +124,21 @@ class ReplicatableRedisMaster(BaseRedisMaster):
     def __init__(self, host, port):
         super().__init__(host,port)
         self.propagates: list[replicaConn] = []
+        self.ackQueue = Queue()
+        self.ackLeft = -1
 
-    async def command_psync(self, _):
+    async def command_psync(self, _, __):
         return [encoders.SimpleString(f"FULLRESYNC {self.replicationId} {self.offset}"),
                 self.generate_rdb()
             ]
 
-    def handle_command(self,command,args,asyncsock):
+    async def handle_command(self,command,args,asyncsock):
         try:
             command_method = getattr(self, f"command_{command.lower()}")
             #override add propagate sockets
             if command.lower() == "replconf" and args[0]=="listening-port":
-                self.propagates.append([asyncsock,0])
-            return command_method(args)
+                self.propagates.append((asyncsock,0))
+            return await command_method(args,asyncsock)
         except AttributeError as e:
             return self.no_command_handler(command)
     
@@ -143,33 +146,38 @@ class ReplicatableRedisMaster(BaseRedisMaster):
         if command[0].upper() not in ("SET","DEL"):
             return
         for i,prop in enumerate(self.propagates):
-            _,writer = prop[0]
+            reader,writer = prop[0]
             try:
                 writer.write(raw)
                 await writer.drain()
                 self.propagates[i] = (prop[0],prop[1]+len(raw))
-                #prop[1]+=len(raw)
             except IOError as e:
                 print(e)
-        self.propagates = [(reader,writer) for reader,writer in self.propagates if not writer.is_closing()]
+            except Exception as ex:
+                print(ex)
+        self.propagates = [((reader,writer),c) for ((reader,writer),c) in self.propagates if not writer.is_closing()]
 
 class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
     def __init__(self, host, port, replicaof=None):
         ReplicatableRedisMaster.__init__(self,host,port)
         BaseRedisSlave.__init__(self,host,port,replicaof)
     
-    async def command_ping(self,_):
+    async def command_ping(self,_, __):
         return encoders.SimpleString("PONG")
 
-    async def command_echo(self,args):
+    async def command_echo(self,args,_):
         return encoders.BulkString(args[0])
     
-    async def command_replconf(self, _):
-        if self.role=="master":
-            return encoders.SimpleString("OK")
-        else:
+    async def command_replconf(self, args,sock):
+        if args[0]=="GETACK":
             return encoders.Array([encoders.BulkString(x) for x in ["REPLCONF","ACK",str(self.offset)]])
-
+        elif args[0]=="ACK":
+            self.ackLeft-=1
+            await sock[1].drain()
+            return []
+        #if self.role=="master":
+        return encoders.SimpleString("OK")
+        
     def set_command_args(self,key, args):
         write,getresp, time = True, encoders.SimpleString("OK"), -1
         if len(args)>0 and args[0].upper() in ("NX","XX"):
@@ -189,14 +197,16 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
             time = float(args[1]) + (unix() if not args[0].endswith("AT") else 0)
         return write, getresp, time
     
-    async def command_set(self,args):
+    async def command_set(self,args,_):
+        while self.ackLeft>0:
+            pass
         key,value, args = args[0],args[1],args[2:]
         write, response, time = self.set_command_args(key, args)
         if write:
             self.state[key] = value,time
         return response
     
-    async def command_get(self, args):
+    async def command_get(self, args,_):
         value,time = self.state.get(args[0],(None,-1))
         if time!=-1 and time<unix():
             value = None
@@ -205,22 +215,45 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
             return encoders.NullBulkString()
         return encoders.BulkString(value)
 
-    async def command_wait(self,args):
-        print(args)
-        if self.role=="slave":
-            return
-        for slave in self.propagates:
-            reader, writer, bytes = *slave[0],slave[1]
-            cmd = encoders.Command(["REPLCONF","GETACK","*"])
-            #writer.write(cmd.encode("utf-8"))
-            #await writer.drain()
-        return encoders.Integer(len(self.propagates))
+    def wait_for_ack(self,acks,timeout,sock): #because asyncio.wait_for said no
+        self.ackLeft=acks
+        start = time()
+        r_acks = acks
+        while self.ackLeft>0:
+            if time()-start<timeout+0.1:
+                continue
+            break
+        if self.ackLeft>0:
+            r_acks = acks-self.ackLeft
+        sock[1].write(encoders.Integer(r_acks).encode("utf-8"))
+        if self.ackLeft>0:
+            sock[1].drain()
+        self.ackLeft=0
+    
+    
+    async def command_wait(self,args,sock):
+        if self.offset==0 and len(self.propagates)>3:
+            sock[1].write(encoders.Integer(len(self.propagates)).encode("utf-8"))
+            await sock[1].drain()
+            return []
+        for repl in self.propagates:
+            _,writer = repl[0]
+            writer.write(encoders.Command(["REPLCONF","GETACK","*"]).encode("utf-8"))
+            await writer.drain()
+        coro = (int(args[0]),float(args[1])/1000,sock)
+        from threading import Thread
+        thread = Thread(target=self.wait_for_ack, args=coro)
+        thread.start()
+        print("x")
+        return []
+        #return encoders.Integer(len(self.propagates))
+
 
     def replication_section(self):
         info = {"role":self.role, "master_replid":self.replicationId, "master_repl_offset":self.offset}
         return encoders.BulkString(info)
 
-    async def command_info(self, args):
+    async def command_info(self, args, _):
         if args[0] == "replication":
             response = self.replication_section()
         return response
