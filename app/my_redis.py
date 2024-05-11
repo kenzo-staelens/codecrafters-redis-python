@@ -32,17 +32,6 @@ class BaseRedis:
             return command_method(args)
         except AttributeError:
             return self.no_command_handler(command)
-
-    async def handle_commands(self, commands, client_reader, client_writer,replica=False):
-        while len(commands)!=0:
-            replica_replconf = replica and commands[0].upper()=="REPLCONF"
-            responses,commands = self.handle_command(commands[0],commands[1:],(client_reader,client_writer)) #pass command and args
-            if not isinstance(responses, list):
-                responses = [responses]
-            if not replica or replica_replconf:
-                for response in responses:
-                    client_writer.write(response.encode("utf-8"))
-                    await client_writer.drain()
     
     async def shadow_handle_commands(self, command, client_reader, client_writer, replica=False):
         command,_ = command
@@ -66,7 +55,6 @@ class BaseRedis:
                 try:
                     command=decoder.get()
                     await self.shadow_handle_commands(command, client_reader,client_writer,replica)
-                    #await self.handle_commands(commands, client_reader,client_writer,replica)
                     if replica:
                         self.offset+=len(command[1])
                 except Exception as e:
@@ -114,7 +102,6 @@ class BaseRedisSlave(BaseRedis):
         await self.send_handshake_data(sock,decoder, "PSYNC","?","-1")
         print(decoder.getmany(4)) # pong, ok, ok, fullsync
         rdb = decoder.get(False) #no decode
-        print(traceback.format_exc())
         
         await self.copy_rdb(rdb)
 
@@ -133,21 +120,6 @@ class ReplicatableRedisMaster(BaseRedisMaster):
         return [encoders.SimpleString(f"FULLRESYNC {self.replicationId} {self.offset}"),
                 self.generate_rdb()
             ], args[2:]
-
-    async def handle_commands(self, commands, client_reader, client_writer,replica=False):
-        while len(commands)!=0:
-            #override add propagate
-            if commands[0].upper() in ("SET","DEL"):
-                pass
-                #await self.propagate(raw)
-            replica_replconf = replica and commands[0].upper()=="REPLCONF"
-            responses,commands = self.handle_command(commands[0],commands[1:],(client_reader,client_writer)) #pass command and args
-            if not isinstance(responses, list):
-                responses = [responses]
-            if not replica or replica_replconf:
-                for response in responses:
-                    client_writer.write(response.encode("utf-8"))
-                    await client_writer.drain()
 
     async def fn_propagate(self,command):
         command, raw = command
@@ -230,6 +202,10 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
         if value is None:
             return encoders.NullBulkString(), args[1:]
         return encoders.BulkString(value),args[1:]
+
+    def command_wait(self,args):
+        print(args)
+        pass
 
     def replication_section(self):
         info = {"role":self.role, "master_replid":self.replicationId, "master_repl_offset":self.offset}
