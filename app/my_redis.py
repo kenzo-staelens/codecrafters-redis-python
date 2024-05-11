@@ -101,8 +101,11 @@ class BaseRedisSlave(BaseRedis):
         await self.send_handshake_data(sock,decoder, "REPLCONF","capa","psync2")
         await self.send_handshake_data(sock,decoder, "PSYNC","?","-1")
         decoder.getmany(4) # pong, ok, ok, fullsync
-        rdb = decoder.get(False) #no decode
-        await self.copy_rdb(rdb)
+        try:
+            rdb = decoder.get(False) #no decode
+            await self.copy_rdb(rdb)
+        except Exception as e:
+            print(e)
 
     async def start_slave(self):
         sock: asyncioSock = await asyncio.open_connection(*self.replicaof)
