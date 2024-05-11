@@ -1,4 +1,8 @@
 from argparse import Action,ArgumentError
+import asyncio
+from typing import Tuple 
+
+asyncioSock = Tuple[asyncio.StreamReader, asyncio.StreamWriter]
 
 class StringInteger(Action):
     """Action for argparse that allows argument, a string and integer, 
