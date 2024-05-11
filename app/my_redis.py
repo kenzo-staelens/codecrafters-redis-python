@@ -36,7 +36,7 @@ class BaseRedis:
     async def shadow_handle_commands(self, command, client_reader, client_writer, replica=False):
         command,_ = command
         replica_replconf = replica and command[0].upper()=="REPLCONF"
-        responses,_ = self.handle_command(command[0],command[1:],(client_reader,client_writer))
+        responses = self.handle_command(command[0],command[1:],(client_reader,client_writer))
         if not isinstance(responses, list):
             responses = [responses]
         if not replica or replica_replconf:
@@ -100,9 +100,8 @@ class BaseRedisSlave(BaseRedis):
         await self.send_handshake_data(sock,decoder, "REPLCONF","listening-port",str(self.port))
         await self.send_handshake_data(sock,decoder, "REPLCONF","capa","psync2")
         await self.send_handshake_data(sock,decoder, "PSYNC","?","-1")
-        print(decoder.getmany(4)) # pong, ok, ok, fullsync
+        decoder.getmany(4) # pong, ok, ok, fullsync
         rdb = decoder.get(False) #no decode
-        
         await self.copy_rdb(rdb)
 
     async def start_slave(self):
@@ -116,15 +115,14 @@ class ReplicatableRedisMaster(BaseRedisMaster):
         super().__init__(host,port)
         self.propagates: list[asyncioSock] = []
 
-    def command_psync(self, args):
+    def command_psync(self, _):
         return [encoders.SimpleString(f"FULLRESYNC {self.replicationId} {self.offset}"),
                 self.generate_rdb()
-            ], args[2:]
+            ]
 
     async def fn_propagate(self,command):
         command, raw = command
         if command[0].upper() in ("SET","DEL"):
-            #print("here")
             await self.propagate(raw)
 
     async def shadow_handle_commands(self, command, client_reader, client_writer, replica=False):
@@ -155,17 +153,17 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
         ReplicatableRedisMaster.__init__(self,host,port)
         BaseRedisSlave.__init__(self,host,port,replicaof)
     
-    def command_ping(self,args):
-        return encoders.SimpleString("PONG"), args #takes no args
+    def command_ping(self,_):
+        return encoders.SimpleString("PONG")
 
     def command_echo(self,args):
-        return encoders.BulkString(args[0]),args[1:]
-
-    def command_replconf(self, args):
+        return encoders.BulkString(args[0])
+    
+    def command_replconf(self, _):
         if self.role=="master":
-            return encoders.SimpleString("OK"), args[2:]
+            return encoders.SimpleString("OK")
         else:
-            return encoders.Array([encoders.BulkString(x) for x in ["REPLCONF","ACK",str(self.offset)]]), args[2:]
+            return encoders.Array([encoders.BulkString(x) for x in ["REPLCONF","ACK",str(self.offset)]])
 
     def set_command_args(self,key, args):
         write,getresp, time = True, encoders.SimpleString("OK"), -1
@@ -184,15 +182,14 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
             if not args[1].startswith("E"):
                 args[1]=float(args[1])/1000
             time = float(args[1]) + (unix() if not args[0].endswith("AT") else 0)
-            args = args[2:]
-        return write, getresp, time, args
+        return write, getresp, time
     
     def command_set(self,args):
-        restargs = args[2:]
-        write, response, time, restargs = self.set_command_args(args[0],restargs)
+        args = args[2:] #set value
+        write, response, time = self.set_command_args(args[0],args)
         if write:
             self.state[args[0]] = args[1],time
-        return response,restargs
+        return response
     
     def command_get(self, args):
         value,time = self.state.get(args[0],(None,-1))
@@ -200,23 +197,21 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
             value = None
             del self.state[args[0]]
         if value is None:
-            return encoders.NullBulkString(), args[1:]
-        return encoders.BulkString(value),args[1:]
+            return encoders.NullBulkString()
+        return encoders.BulkString(value)
 
     def command_wait(self,args):
         print(args)
-        pass
+        return encoders.Integer(0)
 
     def replication_section(self):
         info = {"role":self.role, "master_replid":self.replicationId, "master_repl_offset":self.offset}
-        
         return encoders.BulkString(info)
 
     def command_info(self, args):
         if args[0] == "replication":
             response = self.replication_section()
-            args = args[1:]
-        return response, args
+        return response
 
     async def start(self):
         coros = [self.start_master()]
