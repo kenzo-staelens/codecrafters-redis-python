@@ -189,11 +189,10 @@ class RedisServer(ReplicatableRedisMaster, BaseRedisSlave):
         return write, getresp, time
     
     def command_set(self,args):
-        print(args)
-        args = args[2:] #set value
-        write, response, time = self.set_command_args(args[0],args)
+        key,value, args = args[0],args[1],args[2:]
+        write, response, time = self.set_command_args(key, args)
         if write:
-            self.state[args[0]] = args[1],time
+            self.state[key] = value,time
         return response
     
     def command_get(self, args):
